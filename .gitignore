@@ -24,3 +24,5 @@ libweld-*.tar
 
 # Compiled artifacts
 priv/native
+
+.elixir_ls

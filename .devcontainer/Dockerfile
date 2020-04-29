@@ -1,18 +1,7 @@
-#-------------------------------------------------------------------------------------------------------------
-# Copyright (c) Microsoft Corporation. All rights reserved.
-# Licensed under the MIT License. See https://go.microsoft.com/fwlink/?linkid=2090316 for license information.
-#-------------------------------------------------------------------------------------------------------------
-
-# To fully customize the contents of this image, use the following Dockerfile instead:
-# https://github.com/microsoft/vscode-dev-containers/tree/v0.112.0/containers/ubuntu-18.04-git/.devcontainer/Dockerfile
-FROM rust:1.43-stretch as rust
-
-FROM buildpack-deps:stretch
+FROM buildpack-deps:xenial
 
 ENV OTP_VERSION="22.3.2" \
     REBAR3_VERSION="3.13.1"
-
-LABEL org.opencontainers.image.version=$OTP_VERSION
 
 # We'll install the build dependencies for erlang-odbc along with the erlang
 # build process:
@@ -86,34 +75,46 @@ RUN set -xe \
 	&& tar -xzC /usr/local/src/elixir --strip-components=1 -f elixir-src.tar.gz \
 	&& rm elixir-src.tar.gz \
 	&& cd /usr/local/src/elixir \
-	&& make install clean
+	&& make install clean \
+	&& mix local.hex --force \
+    && mix local.rebar --force
 
 CMD ["iex"]
 
-RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-    ca-certificates \
-    gcc libc6-dev make  \
-    wget curl git zlib1g-dev gnupg software-properties-common \
-    apt-transport-https ca-certificates
-
-RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-
-RUN set -eux; \
-    apt-add-repository "deb http://apt.llvm.org/stretch/ llvm-toolchain-stretch-6.0 main" ; \
-    apt-get update ; \
-    apt-get install -y llvm-6.0-dev clang-6.0 ; \
-    apt-get autoremove -y ; \
-    apt-get clean -y ; \
-    rm -rf /var/lib/apt/lists/* ; \
-    ln -s /usr/bin/llvm-config-6.0 /usr/local/bin/llvm-config
-
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/cargo/bin:$PATH
-COPY --from=rust /usr/local/cargo /usr/local/cargo
-COPY --from=rust /usr/local/rustup /usr/local/rustup
-RUN rm -Rf _build && \
-    mix local.hex --force && \
-    mix local.rebar --force
+    PATH=/usr/local/cargo/bin:$PATH \
+    RUST_VERSION=1.43.0
+
+RUN set -eux; \
+    dpkgArch="$(dpkg --print-architecture)"; \
+    case "${dpkgArch##*-}" in \
+        amd64) rustArch='x86_64-unknown-linux-gnu'; rustupSha256='ad1f8b5199b3b9e231472ed7aa08d2e5d1d539198a15c5b1e53c746aad81d27b' ;; \
+        armhf) rustArch='armv7-unknown-linux-gnueabihf'; rustupSha256='6c6c3789dabf12171c7f500e06d21d8004b5318a5083df8b0b02c0e5ef1d017b' ;; \
+        arm64) rustArch='aarch64-unknown-linux-gnu'; rustupSha256='26942c80234bac34b3c1352abbd9187d3e23b43dae3cf56a9f9c1ea8ee53076d' ;; \
+        i386) rustArch='i686-unknown-linux-gnu'; rustupSha256='27ae12bc294a34e566579deba3e066245d09b8871dc021ef45fc715dced05297' ;; \
+        *) echo >&2 "unsupported architecture: ${dpkgArch}"; exit 1 ;; \
+    esac; \
+    url="https://static.rust-lang.org/rustup/archive/1.21.1/${rustArch}/rustup-init"; \
+    wget "$url"; \
+    echo "${rustupSha256} *rustup-init" | sha256sum -c -; \
+    chmod +x rustup-init; \
+    ./rustup-init -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION; \
+    rm rustup-init; \
+    chmod -R a+w $RUSTUP_HOME $CARGO_HOME; \
+    rustup --version; \
+    cargo --version; \
+    rustc --version;
+
+# Installing LLVM
+
+RUN set -eux; \
+	wget https://releases.llvm.org/6.0.1/clang%2bllvm-6.0.1-x86_64-linux-gnu-ubuntu-16.04.tar.xz; \
+	tar xJf clang+llvm-6.0.1-x86_64-linux-gnu-ubuntu-16.04.tar.xz ; \
+	cp -r clang+llvm-6.0.1-x86_64-linux-gnu-ubuntu-16.04/ $HOME/llvm-6.0/ ; \
+	rm -rf clang+llvm-6.0.1-x86_64-linux-gnu-ubuntu-16.04/ ; \
+	rm -rf clang+llvm-6.0.1-x86_64-linux-gnu-ubuntu-16.04.tar.xz ; \
+	ln -s $HOME/llvm-6.0/bin/clang++ $HOME/llvm-6.0/bin/clang++-6.0;
+
+ENV PATH="/root/llvm-6.0/bin:${PATH}"
+ENV LLVM_SYS_60_PREFIX="/root/llvm-6.0"
