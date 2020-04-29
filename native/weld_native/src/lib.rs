@@ -34,7 +34,7 @@ rustler::rustler_export_nifs! {
         ("weld_conf_new", 0, weld_conf_new),
         ("weld_conf_get", 2, weld_conf_get),
         ("weld_conf_set", 3, weld_conf_set),
-        ("weld_module_run", 3, weld_module_run),
+        ("weld_module_run", 3, weld_module_run, SchedulerFlags::DirtyCpu),
     ],
     Some(on_init)
 }
